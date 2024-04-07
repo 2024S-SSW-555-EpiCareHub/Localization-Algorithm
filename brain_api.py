@@ -30,7 +30,7 @@ async def visualize_brain(file: UploadFile = File(...), patientId: str = Form(..
     try:
 
         uploadId = str(uuid.uuid4())
-        upload_dir = os.path.join("uploads", uploadId)
+        upload_dir = os.path.join("D:\\uploads", uploadId)
         os.makedirs(upload_dir, exist_ok=True)
 
         # Save the uploaded file to the specified location
@@ -38,8 +38,8 @@ async def visualize_brain(file: UploadFile = File(...), patientId: str = Form(..
         with open(upload_path, "wb") as f:
             f.write(file.file.read())
 
-        result = subprocess.run(["python", "brain_visualizer.py",
-                                 "--file", upload_path, "--patientId", patientId, "--uploadId", uploadId, "--historic", str(False)])
+        subprocess.run(["python", "brain_visualizer.py",
+                        "--file", upload_path, "--patientId", patientId, "--uploadId", uploadId, "--historic", str(False)])
 
         output_file = "output.json"
         if os.path.exists(output_file):
@@ -61,7 +61,7 @@ async def visualize_brain_historic(uploadId: str = Form(...)):
 
     try:
         # Save the uploaded file to the specified location
-        upload_dir = os.path.join("uploads", uploadId)
+        upload_dir = os.path.join("D:\\uploads", uploadId)
 
         if not os.path.exists(upload_dir):
             return JSONResponse(content={"message": "No Visualization record found."})

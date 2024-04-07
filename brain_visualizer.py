@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
         brain3d(fif_file_path, s_pred, hemi='both')
     else:
-        root_path = os.path.join("uploads", args.uploadId)
+        root_path = os.path.join("D:\\uploads", args.uploadId)
 
         # set path to save data
         raw, events, evoked_use, fig_name = save_evoked_data(
@@ -73,6 +73,7 @@ if __name__ == "__main__":
         data = {
             "patientId": args.patientId,
             "uploadId": args.uploadId,
+            "rootPath": root_path,
         }
 
         response = requests.post(
