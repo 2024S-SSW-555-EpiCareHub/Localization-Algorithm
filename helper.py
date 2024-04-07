@@ -183,7 +183,7 @@ class ConvDipSingleCatAtt(torch.nn.Module):
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def ConvDip_ESI(task_id, result_path):
+def ConvDip_ESI(task_id, result_path, fig):
     """
     EEG source imaging with ConvDip framework
     task_id: str or list ['LA', 'RA', 'LV', 'RV']
@@ -226,6 +226,10 @@ def ConvDip_ESI(task_id, result_path):
             result_mat = result_dir + '/Test_result_' + \
                 'evoked_' + str(run) + '.mat'
 
+            test_fig_name = os.path.join(
+                result_dir, 'Test_result_evoked_eeg_'+str(run)+'.png')
+
+            fig.savefig(test_fig_name, dpi=300, bbox_inches='tight')
             # load the real dataset
             dataset = sio.loadmat(data_mat)
             test_input = dataset['eeg'].T

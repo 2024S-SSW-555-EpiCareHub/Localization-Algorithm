@@ -5,6 +5,8 @@ from helper import get_stc, load_result, ConvDip_ESI
 import os
 import argparse
 import scipy.io as sio
+import requests
+import json
 
 
 def brain3d(s_pred, hemi):
@@ -41,14 +43,16 @@ if __name__ == "__main__":
 
     # Add arguments
     parser.add_argument('--file', type=str, help='Path to the uploaded file')
-    parser.add_argument('--newId', type=str,
+    parser.add_argument('--patientId', type=str,
+                        help='Path to the uploaded file')
+    parser.add_argument('--uploadId', type=str,
                         help='New ID for the uploaded file')
 
     # Parse arguments
     args = parser.parse_args()
     task = 'LA'
 
-    result_path = os.path.join("data", "uploads", args.newId)
+    result_path = os.path.join("data", "uploads", args.uploadId)
 
     raw = mne.io.read_raw_fif(args.file, preload=True)
     l_freq, h_freq = 1, 30
@@ -82,7 +86,6 @@ if __name__ == "__main__":
                         picks=picks, baseline=baseline, reject=reject)
     epoch_use = epochs[event_id]
     evoked_use = epoch_use.average()
-
     fig = evoked_use.plot_topomap(
         times=[0.0, 0.08, 0.1, 0.12, 0.2], ch_type="eeg")
     fig.savefig(fig_name, dpi=300, bbox_inches='tight')
@@ -93,11 +96,21 @@ if __name__ == "__main__":
     tasks = ['LA']  # or 'LA' or ['LA'], etc.
     # set your result path
     r_path = os.path.join(result_path, "result")
-    ConvDip_ESI(tasks, result_path)
+    ConvDip_ESI(tasks, result_path, fig)
 
     s_pred = load_result(task, r_path)
 
-    print(args.file)
+    data = {
+        "patientId": args.patientId,
+        "uploadId": args.uploadId,
+    }
 
+    response = requests.post(
+        "http://localhost:3000/patients/upload", json=data)
+
+    if response.status_code == 200:
+        print("Request successful!")
+    else:
+        print("Request failed with status code:")
     # Call the brain3d function with the provided arguments
     brain3d(s_pred, hemi='both')
