@@ -1,6 +1,5 @@
 
 import mne
-from mne.datasets import sample
 from mne.beamformer import make_lcmv, apply_lcmv
 import scipy.io as sio
 import numpy as np
@@ -9,16 +8,73 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 import h5py
+from pyvistaqt import BackgroundPlotter
 
 
-def get_stc():
-    data_path = sample.data_path()
-    subjects_dir = data_path / 'subjects'
-    meg_path = data_path / 'MEG' / 'sample'
-    raw_fname = meg_path / 'sample_audvis_filt-0-40_raw.fif'
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+
+event_dict = {
+    "LA": 1,
+    "RA": 2,
+    "LV": 3,
+    "RV": 4,
+}
+
+
+class RandomDatasetSingle(Dataset):
+    def __init__(self, x_data, y_data, length):
+        self.x_data = x_data.reshape(
+            (x_data.shape[0], 1, x_data.shape[1], x_data.shape[2]))
+        self.y_data = y_data
+        self.len = length
+
+    def __getitem__(self, index):
+        x_batch = torch.Tensor(self.x_data[index, :, :, :]).float()
+        y_batch = torch.Tensor(self.y_data[index, :]).float()
+        return x_batch, y_batch, index
+
+    def __len__(self):
+        return self.len
+
+
+class ConvDipSingleCatAtt(torch.nn.Module):
+    def __init__(self, channel_num=1, output_num=1984, conv1_num=8, fc1_num=792, fc2_num=500):
+        super(ConvDipSingleCatAtt, self).__init__()
+        self.cnn = torch.nn.Sequential(
+            torch.nn.Conv2d(channel_num, conv1_num, kernel_size=3,
+                            stride=1, dilation=1, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=3, stride=1, padding=1),
+        )
+        # Squeeze-and-Excitation module
+        self.SE = torch.nn.Sequential(
+            torch.nn.Linear(8, 4),
+            torch.nn.ReLU(),
+            torch.nn.Linear(4, 8),
+            torch.nn.Sigmoid(),
+        )
+        self.classifier = torch.nn.Sequential(
+            torch.nn.Linear(fc1_num, fc2_num, bias=True),
+            torch.nn.ReLU(),
+            torch.nn.Linear(fc2_num, output_num, bias=True)
+        )
+
+    def forward(self, x):
+        out = self.cnn(x)
+        out = out.view(out.size(0), out.size(1), -1)
+        squeeze = torch.mean(out, dim=2)
+        excitation = self.SE(squeeze)
+        excitation = excitation.unsqueeze(2)
+        scale_out = torch.mul(out, excitation)
+        flat_out = out.view(scale_out.size(0), -1)
+        final_out = self.classifier(flat_out)
+        return final_out
+
+
+def get_stc(file):
     # Read the raw data
-    raw = mne.io.read_raw_fif(raw_fname)
+    raw = mne.io.read_raw_fif(file)
     raw.info['bads'] = ['MEG 2443']  # bad MEG channel
 
     # Set up the epoching
@@ -85,7 +141,7 @@ def load_result(task, result_path):
         print("load result for task: {}".format(task))
 
         fname = os.path.join(
-            result_path, 'Test_result_evoked_' + str(task) + '.mat')
+            result_path, 'Test_EEG_' + str(task) + '.mat')
         dataset = sio.loadmat(fname)
         s_pred = dataset['s_pred']
         s_pred = np.absolute(s_pred)
@@ -117,7 +173,6 @@ def input_reshape(data, fname):
     # load map...................
     matfile = h5py.File(fname)
     maptable = matfile['maptable'][()].T
-    print(maptable.shape)
     x = max(maptable[:, 0]) + 1
     y = max(maptable[:, 1]) + 1
     data_num = data.shape[0]
@@ -130,60 +185,7 @@ def input_reshape(data, fname):
     return temp_matrix
 
 
-class RandomDatasetSingle(Dataset):
-    def __init__(self, x_data, y_data, length):
-        self.x_data = x_data.reshape(
-            (x_data.shape[0], 1, x_data.shape[1], x_data.shape[2]))
-        self.y_data = y_data
-        self.len = length
-
-    def __getitem__(self, index):
-        x_batch = torch.Tensor(self.x_data[index, :, :, :]).float()
-        y_batch = torch.Tensor(self.y_data[index, :]).float()
-        return x_batch, y_batch, index
-
-    def __len__(self):
-        return self.len
-
-
-class ConvDipSingleCatAtt(torch.nn.Module):
-    def __init__(self, channel_num=1, output_num=1984, conv1_num=8, fc1_num=792, fc2_num=500):
-        super(ConvDipSingleCatAtt, self).__init__()
-        self.cnn = torch.nn.Sequential(
-            torch.nn.Conv2d(channel_num, conv1_num, kernel_size=3,
-                            stride=1, dilation=1, padding=1),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=3, stride=1, padding=1),
-        )
-        # Squeeze-and-Excitation module
-        self.SE = torch.nn.Sequential(
-            torch.nn.Linear(8, 4),
-            torch.nn.ReLU(),
-            torch.nn.Linear(4, 8),
-            torch.nn.Sigmoid(),
-        )
-        self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(fc1_num, fc2_num, bias=True),
-            torch.nn.ReLU(),
-            torch.nn.Linear(fc2_num, output_num, bias=True)
-        )
-
-    def forward(self, x):
-        out = self.cnn(x)
-        out = out.view(out.size(0), out.size(1), -1)
-        squeeze = torch.mean(out, dim=2)
-        excitation = self.SE(squeeze)
-        excitation = excitation.unsqueeze(2)
-        scale_out = torch.mul(out, excitation)
-        flat_out = out.view(scale_out.size(0), -1)
-        final_out = self.classifier(flat_out)
-        return final_out
-
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-
-def ConvDip_ESI(task_id, result_path, fig):
+def ConvDip_ESI(task_id, path):
     """
     EEG source imaging with ConvDip framework
     task_id: str or list ['LA', 'RA', 'LV', 'RV']
@@ -195,20 +197,18 @@ def ConvDip_ESI(task_id, result_path, fig):
     model_flag = 'real_model'
     model_dir = './model/' + data_name + '/' + model_flag
 
-    test_data_dir = os.path.join(result_path, "sample_data")
-    # result_dir = './result/' + data_name + '/' + model_flag
-    result_dir = os.path.join(result_path, "result")
-    if not os.path.exists(result_dir):
-        os.makedirs(result_dir)
+    test_data = os.path.join(path, "data")
+
+    result_path = os.path.join(path, "result")
+    if not os.path.exists(result_path):
+        os.makedirs(result_path)
 
     # data: EEG/MEG & source
     # size: (dim, nsample)
 
     if isinstance(task_id, str):
-        # print('type of task id: str')
         task_set = [task_id]
     elif isinstance(task_id, list):
-        # print('type of task id: list')
         task_set = task_id
     else:
         raise Exception(
@@ -221,27 +221,17 @@ def ConvDip_ESI(task_id, result_path, fig):
             raise Exception(
                 "Oops! That was not a valid task id. Try use 'LA', 'RA', 'LV' or 'RV'!")
         else:
-            data_mat = test_data_dir + '/evoked_' + \
-                'eeg' + '_' + str(run) + '.mat'
-            result_mat = result_dir + '/Test_result_' + \
-                'evoked_' + str(run) + '.mat'
+            data_mat = test_data + '/EEG_' + str(run) + '.mat'
+            result_mat = result_path + '/Test_EEG_' + str(run) + '.mat'
 
-            test_fig_name = os.path.join(
-                result_dir, 'Test_result_evoked_eeg_'+str(run)+'.png')
-
-            fig.savefig(test_fig_name, dpi=300, bbox_inches='tight')
             # load the real dataset
             dataset = sio.loadmat(data_mat)
             test_input = dataset['eeg'].T
 
-            # print("data normalization:")
             test_input = max_min_normalize(test_input)
 
             # change to [timepoint, 12, 14]:
             test_input_matrix = input_reshape(test_input, map_dir)
-
-            # print('check input matrix shape:')
-            # print(test_input_matrix.shape)  # (166560, 9, 11)
 
             # get the number of samples:
             ntest = test_input_matrix.shape[0]
@@ -275,8 +265,69 @@ def ConvDip_ESI(task_id, result_path, fig):
 
             # ================== save test result: ==================
             sio.savemat(result_mat, {'s_pred': Y_pred})
-            print("result saved in: " + result_mat)
+            Y_pred = np.absolute(Y_pred)
+            if Y_pred.shape[0] != 1984:
+                Y_pred = Y_pred.T
+            return Y_pred
             # print("======== test finished!! ========")
 
-        # print("\n")
-        # print('===================== Test Finished! =========================')
+
+def data_preprocessing(file):
+    raw = mne.io.read_raw_fif(file, preload=True)
+    l_freq, h_freq = 1, 30
+    raw.filter(l_freq, h_freq, method='fir', fir_design='firwin')
+    sfreq_resample = 480
+    raw = raw.resample(sfreq_resample)
+    events = mne.find_events(raw, stim_channel="STI 014")
+    return raw, events
+
+
+def save_evoked_data(file, event, path):
+    raw, events = data_preprocessing(file)
+
+    fig_path = os.path.join(path, "figures")
+    data_path = os.path.join(path, "data")
+    if not os.path.exists(fig_path):
+        os.makedirs(fig_path)
+    if not os.path.exists(data_path):
+        os.makedirs(data_path)
+
+    fig_name = os.path.join(fig_path, 'EEG_'+str(event)+'.png')
+    mat_name = os.path.join(data_path, 'EEG_'+str(event)+'.mat')
+    tmin = -0.1  # start of each epoch (100ms before the event)
+    tmax = 0.4  # end of each epoch (400ms after the event)
+    raw.info['bads'] = ['MEG 2443', 'EEG 053']
+    baseline = (None, 0)  # means from the first instant to t = 0
+    reject = dict(grad=4000e-13, mag=4e-12, eog=150e-6)
+    picks = mne.pick_types(raw.info, meg=True, eeg=True,
+                           eog=True, exclude='bads')
+    epochs = mne.Epochs(raw, events, event_dict, tmin, tmax, proj=True,
+                        picks=picks, baseline=baseline, reject=reject)
+    epoch_use = epochs[event]
+    evoked_use = epoch_use.average()
+
+    # evoked_use_path = os.path.join(data_path, 'evoked_use.npy')
+    # np.save(evoked_use_path, evoked_use)
+
+    data = evoked_use.data[:, :]
+    sio.savemat(mat_name, {'eeg': data})
+    return raw, events, evoked_use, fig_name
+
+
+def brain3d(file, s_pred, hemi):
+    stc = get_stc(file)
+    stc.data = s_pred
+    data_path = mne.datasets.sample.data_path()
+    subjects_dir = data_path / 'subjects'
+
+    plotter = BackgroundPlotter()
+    brain = mne.viz.plot_source_estimates(
+        stc,
+        views='lateral',
+        hemi=hemi,
+        surface='white',
+        background='white',
+        size=(1000, 400),
+        subjects_dir=subjects_dir,
+    )
+    plotter.app.exec_()
