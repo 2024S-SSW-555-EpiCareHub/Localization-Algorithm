@@ -3,8 +3,7 @@ from helper import save_evoked_data, data_preprocessing, load_result, ConvDip_ES
 import os
 import argparse
 import requests
-import numpy as np
-import matplotlib.pyplot as plt
+import json
 
 
 if __name__ == "__main__":
@@ -98,3 +97,8 @@ if __name__ == "__main__":
                          32: "k"},  # set color according to events id
         )
         brain3d(args.file, s_pred, hemi='both')
+
+        data = {"uploadId": args.uploadId}
+        # Print the data to stdout (can be captured by subprocess.run)
+        with open("output.json", "w") as outfile:
+            json.dump(data, outfile)
