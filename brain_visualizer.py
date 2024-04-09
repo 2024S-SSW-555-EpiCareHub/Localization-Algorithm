@@ -21,6 +21,8 @@ if __name__ == "__main__":
         parser.add_argument('--upload_dir', type=str,
                             help='For historic file directory')
     else:
+        parser.add_argument('--basePath', type=str,
+                            help='Root Path to the upload directory')
         parser.add_argument('--file', type=str,
                             help='Path to the uploaded file')
         parser.add_argument('--patientId', type=str,
@@ -58,7 +60,7 @@ if __name__ == "__main__":
 
         brain3d(fif_file_path, s_pred, hemi='both')
     else:
-        root_path = os.path.join("D:\\uploads", args.uploadId)
+        root_path = os.path.join(args.basePath, args.uploadId)
 
         # set path to save data
         raw, events, evoked_use, fig_name = save_evoked_data(

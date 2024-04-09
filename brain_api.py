@@ -5,6 +5,7 @@ import subprocess
 import os
 import uuid
 import json
+import platform
 
 
 app = FastAPI()
@@ -24,13 +25,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+with open('config.json', 'r') as file:
+    config = json.load(file)
+
+os_name = platform.system()
+
+# Check if the OS is macOS or Windows
+if os_name == 'Darwin':
+    base_Path = config['mac_path']
+    print("MacOS Detected", base_Path)
+elif os_name == 'Windows':
+    base_Path = config['windows_path']
+else:
+    raise Exception("Unsupported operating system.")
+    
+
 
 @app.post("/visualize_brain")
 async def visualize_brain(file: UploadFile = File(...), patientId: str = Form(...)):
     try:
 
         uploadId = str(uuid.uuid4())
-        upload_dir = os.path.join("D:\\uploads", uploadId)
+        upload_dir = os.path.join(base_Path, uploadId)
         os.makedirs(upload_dir, exist_ok=True)
 
         # Save the uploaded file to the specified location
@@ -38,7 +54,7 @@ async def visualize_brain(file: UploadFile = File(...), patientId: str = Form(..
         with open(upload_path, "wb") as f:
             f.write(file.file.read())
 
-        subprocess.run(["python", "brain_visualizer.py",
+        subprocess.run(["python", "brain_visualizer.py","--basePath", base_Path,
                         "--file", upload_path, "--patientId", patientId, "--uploadId", uploadId, "--historic", str(False)])
 
         output_file = "output.json"
@@ -61,7 +77,7 @@ async def visualize_brain_historic(uploadId: str = Form(...)):
 
     try:
         # Save the uploaded file to the specified location
-        upload_dir = os.path.join("D:\\uploads", uploadId)
+        upload_dir = os.path.join(base_Path, uploadId)
 
         if not os.path.exists(upload_dir):
             return JSONResponse(content={"message": "No Visualization record found."})
