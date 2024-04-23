@@ -314,7 +314,7 @@ def save_evoked_data(file, event, path):
     return raw, events, evoked_use, fig_name
 
 
-def brain3d(file, s_pred, hemi):
+def brain3d(file, s_pred, directory, hemi):
     stc = get_stc(file)
     stc.data = s_pred
     data_path = mne.datasets.sample.data_path()
@@ -330,4 +330,6 @@ def brain3d(file, s_pred, hemi):
         size=(1000, 400),
         subjects_dir=subjects_dir,
     )
+    fname = os.path.join(directory, 'figures', 'brain3d.png')
+    brain.save_image(fname)
     plotter.app.exec_()

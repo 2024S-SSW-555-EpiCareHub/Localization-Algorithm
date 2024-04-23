@@ -58,7 +58,7 @@ if __name__ == "__main__":
                          32: "k"},  # set color according to events id
         )
 
-        brain3d(fif_file_path, s_pred, hemi='both')
+        brain3d(fif_file_path, s_pred, args.upload_dir, hemi='both')
     else:
         root_path = os.path.join(args.basePath, args.uploadId)
 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
             event_color={1: "r", 2: "g", 3: "b", 4: "m", 5: "y",
                          32: "k"},  # set color according to events id
         )
-        brain3d(args.file, s_pred, hemi='both')
+        brain3d(args.file, s_pred, root_path, hemi='both')
 
         data = {"uploadId": args.uploadId}
         # Print the data to stdout (can be captured by subprocess.run)
