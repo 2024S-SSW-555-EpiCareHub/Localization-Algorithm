@@ -330,6 +330,10 @@ def brain3d(file, s_pred, directory, hemi):
         size=(1000, 400),
         subjects_dir=subjects_dir,
     )
-    fname = os.path.join(directory, 'figures', 'brain3d.png')
-    brain.save_image(fname)
+    views = ['medial', 'rostral', 'caudal', 'dorsal', 'ventral', 'frontal', 'parietal', 'axial', 'sagittal', 'coronal', 'lateral']
+    for view in views:
+        view_filename = f'{view}.png'
+        view_path = os.path.join(directory, 'figures', view_filename)
+        brain.show_view(view)
+        brain.save_image(view_path)
     plotter.app.exec_()
