@@ -9,6 +9,16 @@ from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 import h5py
 from pyvistaqt import BackgroundPlotter
+import cloudinary
+from cloudinary import uploader
+import requests
+
+
+cloudinary.config(
+    cloud_name="damd1pa4a",
+    api_key="419822137981766",
+    api_secret="MnULqJOhq64i6VWpfoTCCd_-82c"
+)
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -282,7 +292,7 @@ def data_preprocessing(file):
     return raw, events
 
 
-def save_evoked_data(file, event, path):
+def save_evoked_data(uploadId, file, event, path):
     raw, events = data_preprocessing(file)
 
     fig_path = os.path.join(path, "figures")
@@ -294,6 +304,7 @@ def save_evoked_data(file, event, path):
 
     fig_name = os.path.join(fig_path, 'EEG_'+str(event)+'.png')
     mat_name = os.path.join(data_path, 'EEG_'+str(event)+'.mat')
+
     tmin = -0.1  # start of each epoch (100ms before the event)
     tmax = 0.4  # end of each epoch (400ms after the event)
     raw.info['bads'] = ['MEG 2443', 'EEG 053']
@@ -306,15 +317,31 @@ def save_evoked_data(file, event, path):
     epoch_use = epochs[event]
     evoked_use = epoch_use.average()
 
+    fig = evoked_use.plot_topomap(
+        times=[0.0, 0.08, 0.1, 0.12, 0.2], ch_type="eeg")
+    fig.savefig(fig_name, dpi=300, bbox_inches='tight')
     # evoked_use_path = os.path.join(data_path, 'evoked_use.npy')
     # np.save(evoked_use_path, evoked_use)
 
     data = evoked_use.data[:, :]
     sio.savemat(mat_name, {'eeg': data})
-    return raw, events, evoked_use, fig_name
+    figure_result = uploader.upload(
+        fig_name, folder=f"{uploadId}/figures",
+        public_id='EEG_'+str(event)+'.png'
+    )
+    mat_result = uploader.upload(
+        mat_name, folder=f"{uploadId}/data",
+        public_id='EEG_'+str(event)+'.mat',
+        resource_type="raw"
+    )
+    figure_url = figure_result['secure_url']
+    mat_url = mat_result['secure_url']
+
+    return raw, events, evoked_use, fig_name, figure_url, mat_url
 
 
-def brain3d(file, s_pred, directory, hemi):
+def brain3d(file, uploadId, s_pred, directory, request, hemi):
+    request['images'] = []
     stc = get_stc(file)
     stc.data = s_pred
     data_path = mne.datasets.sample.data_path()
@@ -330,10 +357,43 @@ def brain3d(file, s_pred, directory, hemi):
         size=(1000, 400),
         subjects_dir=subjects_dir,
     )
-    views = ['medial', 'rostral', 'caudal', 'dorsal', 'ventral', 'frontal', 'parietal', 'axial', 'sagittal', 'coronal', 'lateral']
+    views = ['medial', 'rostral', 'caudal', 'dorsal', 'ventral',
+             'frontal', 'parietal', 'axial', 'sagittal', 'coronal', 'lateral']
     for view in views:
         view_filename = f'{view}.png'
-        view_path = os.path.join(directory, 'figures', view_filename)
+        view_path = os.path.join(directory, '', view_filename)
         brain.show_view(view)
         brain.save_image(view_path)
+        response = uploader.upload(
+            view_path, public_id=f'{uploadId}/figures/{view_filename}')
+        cloudinary_url = response['secure_url']
+        request['images'].append(cloudinary_url)
+        os.remove(view_path)
+
+    response = requests.post(
+        "http://localhost:3000/patients/upload", json=request)
+
+    if response.status_code == 200:
+        print("Request successful!")
+    else:
+        print("Request failed with status code:")
+    plotter.app.exec_()
+
+
+def brain3dOnlyVisualize(file, s_pred, directory, hemi):
+    stc = get_stc(file)
+    stc.data = s_pred
+    data_path = mne.datasets.sample.data_path()
+    subjects_dir = data_path / 'subjects'
+
+    plotter = BackgroundPlotter()
+    brain = mne.viz.plot_source_estimates(
+        stc,
+        views='lateral',
+        hemi=hemi,
+        surface='white',
+        background='white',
+        size=(1000, 400),
+        subjects_dir=subjects_dir,
+    )
     plotter.app.exec_()

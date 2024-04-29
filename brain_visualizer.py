@@ -1,9 +1,17 @@
 
-from helper import save_evoked_data, data_preprocessing, load_result, ConvDip_ESI, brain3d
+from helper import save_evoked_data, data_preprocessing, load_result, ConvDip_ESI, brain3d, brain3dOnlyVisualize
 import os
 import argparse
-import requests
 import json
+import cloudinary
+from cloudinary import uploader
+
+
+cloudinary.config(
+    cloud_name="damd1pa4a",
+    api_key="419822137981766",
+    api_secret="MnULqJOhq64i6VWpfoTCCd_-82c"
+)
 
 
 if __name__ == "__main__":
@@ -58,13 +66,14 @@ if __name__ == "__main__":
                          32: "k"},  # set color according to events id
         )
 
-        brain3d(fif_file_path, s_pred, args.upload_dir, hemi='both')
+        brain3dOnlyVisualize(fif_file_path, s_pred,
+                             args.upload_dir, hemi='both')
     else:
         root_path = os.path.join(args.basePath, args.uploadId)
 
         # set path to save data
-        raw, events, evoked_use, fig_name = save_evoked_data(
-            args.file, event_id, root_path)
+        raw, events, evoked_use, fig_name, figure_url, mat_url = save_evoked_data(args.uploadId,
+                                                                                  args.file, event_id, root_path)
 
         # set your result path
         result_path = os.path.join(root_path, "result")
@@ -72,24 +81,7 @@ if __name__ == "__main__":
 
         # s_pred = load_result(event_id, result_path)
 
-        data = {
-            "patientId": args.patientId,
-            "uploadId": args.uploadId,
-            "rootPath": root_path,
-        }
-
-        response = requests.post(
-            "http://localhost:3000/patients/upload", json=data)
-
-        if response.status_code == 200:
-            print("Request successful!")
-        else:
-            print("Request failed with status code:")
         # Call the brain3d function with the provided arguments
-
-        fig = evoked_use.plot_topomap(
-            times=[0.0, 0.08, 0.1, 0.12, 0.2], ch_type="eeg")
-        fig.savefig(fig_name, dpi=300, bbox_inches='tight')
 
         fig = raw.plot(
             events=events,
@@ -99,7 +91,12 @@ if __name__ == "__main__":
             event_color={1: "r", 2: "g", 3: "b", 4: "m", 5: "y",
                          32: "k"},  # set color according to events id
         )
-        brain3d(args.file, s_pred, root_path, hemi='both')
+        brain3d(args.file, args.uploadId, s_pred, root_path, {
+            "patientId": args.patientId,
+            "uploadId": args.uploadId,
+            "figUrl": figure_url,
+            "matUrl": mat_url,
+        }, hemi='both')
 
         data = {"uploadId": args.uploadId}
         # Print the data to stdout (can be captured by subprocess.run)
